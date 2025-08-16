@@ -1,0 +1,64 @@
+
+# RNA-seq Processing Pipeline
+# Tools: SRA-tools, FastQC, Trimmomatic, HISAT2, Subread (featureCounts)
+# ============================
+
+# ----------- 0. Setup -----------
+# Make directories for organization
+mkdir -p raw_data fastqc_reports trimmed_data aligned_data counts
+
+# ----------- 1. Download Data -----------
+# Download SRA data using prefetch (SRA-tools must be installed)
+# Example: SRR1234567 is your SRA accession
+prefetch SRR1234567
+
+# Convert SRA to FASTQ
+fastq-dump --split-files --gzip SRR1234567.sra -O raw_data/
+
+# ----------- 2. Quality Check (before trimming) -----------
+# Run FastQC on raw FASTQ files
+fastqc raw_data/*.fastq.gz -o fastqc_reports/
+
+# ----------- 3. Read Trimming -----------
+# Using Trimmomatic for adapter and quality trimming
+# Change PE to SE if your data is single-end
+trimmomatic PE -threads 8 \
+  raw_data/SRR1234567_1.fastq.gz raw_data/SRR1234567_2.fastq.gz \
+  trimmed_data/SRR1234567_1_paired.fq.gz trimmed_data/SRR1234567_1_unpaired.fq.gz \
+  trimmed_data/SRR1234567_2_paired.fq.gz trimmed_data/SRR1234567_2_unpaired.fq.gz \
+  ILLUMINACLIP:/path/to/Trimmomatic/adapters/TruSeq3-PE.fa:2:30:10 \
+  LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:36
+
+# ----------- 4. Quality Check (after trimming) -----------
+# Run FastQC again to confirm trimming worked
+fastqc trimmed_data/*.fq.gz -o fastqc_reports/
+
+# ----------- 5. Alignment with HISAT2 -----------
+# Build HISAT2 index (only once for reference genome)
+# Reference genome example: genome.fa
+hisat2-build genome.fa genome_index
+
+# Align paired-end reads
+hisat2 -p 8 -x genome_index \
+  -1 trimmed_data/SRR1234567_1_paired.fq.gz \
+  -2 trimmed_data/SRR1234567_2_paired.fq.gz \
+  -S aligned_data/SRR1234567.sam
+
+# Convert SAM to BAM, sort and index
+samtools view -bS aligned_data/SRR1234567.sam | samtools sort -o aligned_data/SRR1234567_sorted.bam
+samtools index aligned_data/SRR1234567_sorted.bam
+rm aligned_data/SRR1234567.sam  # optional: remove SAM to save space
+
+# ----------- 6. Gene Counting with featureCounts -----------
+# Annotation file must be GTF (e.g., genes.gtf)
+featureCounts -T 8 -p -t exon -g gene_id \
+  -a genes.gtf \
+  -o counts/gene_counts.txt \
+  aligned_data/SRR1234567_sorted.bam
+
+# ----------- 7. Output -----------
+# Final results:
+# - QC reports: fastqc_reports/
+# - Trimmed reads: trimmed_data/
+# - Alignments: aligned_data/*.bam
+# - Counts table: counts/gene_counts.txt

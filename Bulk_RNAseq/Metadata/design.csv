@@ -1,0 +1,7 @@
+SampleID,Treatment,Sequencing
+control_1,untreated,PE
+control_2,untreated,PE
+control_3,untreated,PE
+drought_1,treated,PE
+drought_2,treated,PE
+drought_3,treated,PE
